@@ -1,0 +1,6 @@
+/dist/
+/codescene-mcp
+*.test
+*.out
+.idea/
+.vscode/
