@@ -1,4 +1,5 @@
-// Package thresholds parses .codescene-thresholds-style KEY=VALUE files.
+// Package thresholds parses .codescene-thresholds / .codecov-thresholds
+// KEY=VALUE files.
 package thresholds
 
 import (
@@ -9,11 +10,17 @@ import (
 	"strings"
 )
 
-// Thresholds holds the floor values from .codescene-thresholds.
+// Thresholds holds floor values from .codescene-thresholds and .codecov-thresholds.
+//
+// CodeScene keys: HOTSPOT_THRESHOLD, AVERAGE_THRESHOLD (0..10 scale).
+// Codecov keys: COVERAGE_THRESHOLD (percentage 0..100),
+// COVERAGE_DELTA_THRESHOLD (allowed coverage drop, percentage points, e.g. -0.5).
 type Thresholds struct {
-	Hotspot float64
-	Average float64
-	Raw     map[string]string
+	Hotspot       float64
+	Average       float64
+	Coverage      float64
+	CoverageDelta float64
+	Raw           map[string]string
 }
 
 // Load parses a KEY=VALUE file. Lines starting with # are comments. Missing
@@ -54,13 +61,20 @@ func Load(path string) (*Thresholds, error) {
 	if v, ok := t.Raw["AVERAGE_THRESHOLD"]; ok {
 		t.Average, _ = strconv.ParseFloat(v, 64)
 	}
+	if v, ok := t.Raw["COVERAGE_THRESHOLD"]; ok {
+		t.Coverage, _ = strconv.ParseFloat(v, 64)
+	}
+	if v, ok := t.Raw["COVERAGE_DELTA_THRESHOLD"]; ok {
+		t.CoverageDelta, _ = strconv.ParseFloat(v, 64)
+	}
 	return t, nil
 }
 
 // String renders a one-line summary suitable for CLI output.
 func (t *Thresholds) String() string {
 	if t == nil || t.Raw == nil {
-		return "(no .codescene-thresholds found)"
+		return "(no thresholds file found)"
 	}
-	return fmt.Sprintf("HOTSPOT_THRESHOLD=%.2f AVERAGE_THRESHOLD=%.2f", t.Hotspot, t.Average)
+	return fmt.Sprintf("HOTSPOT=%.2f AVERAGE=%.2f COVERAGE=%.2f COVERAGE_DELTA=%+.2f",
+		t.Hotspot, t.Average, t.Coverage, t.CoverageDelta)
 }

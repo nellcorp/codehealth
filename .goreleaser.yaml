@@ -1,15 +1,15 @@
 version: 2
 
-project_name: codescene-mcp
+project_name: codehealth-mcp
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: codescene-mcp
-    main: ./cmd/codescene-mcp
-    binary: codescene-mcp
+  - id: codehealth-mcp
+    main: ./cmd/codehealth-mcp
+    binary: codehealth-mcp
     env:
       - CGO_ENABLED=0
     goos:
@@ -22,7 +22,7 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X github.com/nellcorp/codescene-mcp/internal/mcpsrv.Version={{.Version}}
+      - -X github.com/nellcorp/codehealth-mcp/internal/mcpsrv.Version={{.Version}}
 
 archives:
   - id: default
@@ -53,6 +53,6 @@ changelog:
 release:
   github:
     owner: nellcorp
-    name: codescene-mcp
+    name: codehealth-mcp
   draft: false
   prerelease: auto

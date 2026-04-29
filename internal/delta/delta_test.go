@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nellcorp/codescene-mcp/internal/local"
+	"github.com/nellcorp/codehealth-mcp/internal/local"
 )
 
 func gitInit(t *testing.T) string {

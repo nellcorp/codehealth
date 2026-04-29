@@ -38,6 +38,28 @@ func TestLoadMissing(t *testing.T) {
 	}
 }
 
+func TestLoadCoverage(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".codecov-thresholds")
+	body := `# Codecov thresholds
+COVERAGE_THRESHOLD=80.0
+COVERAGE_DELTA_THRESHOLD=-0.5
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Coverage != 80.0 {
+		t.Fatalf("coverage: want 80.0 got %v", got.Coverage)
+	}
+	if got.CoverageDelta != -0.5 {
+		t.Fatalf("coverage_delta: want -0.5 got %v", got.CoverageDelta)
+	}
+}
+
 func TestLoadIgnoresMalformed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".codescene-thresholds")

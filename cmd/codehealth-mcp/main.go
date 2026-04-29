@@ -1,12 +1,15 @@
-// Command codescene-mcp exposes CodeScene tooling over MCP and as a CLI.
+// Command codehealth-mcp exposes CodeScene + Codecov tooling over MCP and as a CLI.
 //
 // Usage:
 //
-//	codescene-mcp serve              # stdio MCP server
-//	codescene-mcp health             # project scores + threshold floor
-//	codescene-mcp delta [--staged]   # local delta check
-//	codescene-mcp hotspots [--limit] # top hotspots
-//	codescene-mcp file <path>        # file health + biomarkers
+//	codehealth-mcp serve                              # stdio MCP server
+//	codehealth-mcp health                             # CodeScene project scores + floor
+//	codehealth-mcp delta [--staged]                   # local delta check
+//	codehealth-mcp hotspots [--limit]                 # CodeScene top hotspots
+//	codehealth-mcp file <path>                        # CodeScene file health + biomarkers
+//	codehealth-mcp coverage                           # Codecov project coverage + floor
+//	codehealth-mcp coverage-file <path> [--ref <r>]   # Codecov per-file coverage
+//	codehealth-mcp coverage-delta <base> <head>       # Codecov compare base..head
 //
 // All commands read configuration from environment variables. See README.
 package main
@@ -21,12 +24,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/nellcorp/codescene-mcp/internal/api"
-	"github.com/nellcorp/codescene-mcp/internal/config"
-	"github.com/nellcorp/codescene-mcp/internal/delta"
-	"github.com/nellcorp/codescene-mcp/internal/local"
-	"github.com/nellcorp/codescene-mcp/internal/mcpsrv"
-	"github.com/nellcorp/codescene-mcp/internal/thresholds"
+	"github.com/nellcorp/codehealth-mcp/internal/api"
+	"github.com/nellcorp/codehealth-mcp/internal/codecov"
+	"github.com/nellcorp/codehealth-mcp/internal/config"
+	"github.com/nellcorp/codehealth-mcp/internal/delta"
+	"github.com/nellcorp/codehealth-mcp/internal/local"
+	"github.com/nellcorp/codehealth-mcp/internal/mcpsrv"
+	"github.com/nellcorp/codehealth-mcp/internal/thresholds"
 )
 
 // version is overridden at build time via -ldflags.
@@ -36,13 +40,17 @@ func main() {
 	local.WarnFallbackTo = func(msg string) { fmt.Fprintln(os.Stderr, msg) }
 
 	root := &cobra.Command{
-		Use:           "codescene-mcp",
-		Short:         "CodeScene MCP server + CLI",
+		Use:           "codehealth-mcp",
+		Short:         "CodeScene + Codecov MCP server + CLI",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), healthCmd(), deltaCmd(), hotspotsCmd(), fileCmd())
+	root.AddCommand(
+		serveCmd(),
+		healthCmd(), deltaCmd(), hotspotsCmd(), fileCmd(),
+		coverageCmd(), coverageFileCmd(), coverageDeltaCmd(),
+	)
 
 	if err := root.ExecuteContext(rootCtx()); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -71,7 +79,7 @@ func serveCmd() *cobra.Command {
 func healthCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "health",
-		Short: "Print project-level scores and the local threshold floor",
+		Short: "Print CodeScene project scores + threshold floor",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg := config.FromEnv()
 			if err := cfg.APIReady(); err != nil {
@@ -171,6 +179,80 @@ func fileCmd() *cobra.Command {
 				return err
 			}
 			return printJSON(fh)
+		},
+	}
+}
+
+func coverageCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "coverage",
+		Short: "Print Codecov project coverage + threshold floor",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg := config.FromEnv()
+			if err := cfg.CoverageReady(); err != nil {
+				return err
+			}
+			cov, err := codecov.New(cfg.CodecovBaseURL, cfg.CodecovToken, cfg.CodecovSlug).
+				ProjectCoverage(cmd.Context())
+			if err != nil {
+				return err
+			}
+			th, _ := thresholds.Load(".codecov-thresholds")
+			fmt.Printf("coverage: %.2f%%  (floor %.2f%%)\n", cov.Coverage, th.Coverage)
+			if th.Coverage > 0 && cov.Coverage < th.Coverage {
+				fmt.Println("WARNING: coverage below floor")
+			}
+			return nil
+		},
+	}
+}
+
+func coverageFileCmd() *cobra.Command {
+	var ref string
+	c := &cobra.Command{
+		Use:   "coverage-file <path>",
+		Short: "Print Codecov per-file coverage",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := config.FromEnv()
+			if err := cfg.CoverageReady(); err != nil {
+				return err
+			}
+			fc, err := codecov.New(cfg.CodecovBaseURL, cfg.CodecovToken, cfg.CodecovSlug).
+				FileCoverage(cmd.Context(), ref, args[0])
+			if err != nil {
+				return err
+			}
+			return printJSON(fc)
+		},
+	}
+	c.Flags().StringVar(&ref, "ref", "", "branch name or commit SHA (default: repo default branch)")
+	return c
+}
+
+func coverageDeltaCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "coverage-delta <base> <head>",
+		Short: "Print Codecov coverage delta between two commits",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := config.FromEnv()
+			if err := cfg.CoverageReady(); err != nil {
+				return err
+			}
+			cd, err := codecov.New(cfg.CodecovBaseURL, cfg.CodecovToken, cfg.CodecovSlug).
+				Compare(cmd.Context(), args[0], args[1])
+			if err != nil {
+				return err
+			}
+			th, _ := thresholds.Load(".codecov-thresholds")
+			fmt.Printf("base:  %.2f%%\n", cd.BaseCoverage)
+			fmt.Printf("head:  %.2f%%\n", cd.HeadCoverage)
+			fmt.Printf("delta: %+.2f%%  (floor %+.2f%%)\n", cd.Delta, th.CoverageDelta)
+			if th.CoverageDelta != 0 && cd.Delta < th.CoverageDelta {
+				fmt.Println("WARNING: coverage delta below floor")
+			}
+			return nil
 		},
 	}
 }

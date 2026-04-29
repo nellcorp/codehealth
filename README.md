@@ -1,16 +1,21 @@
-# codescene-mcp
+# codehealth-mcp
 
-Portable Go binary that exposes [CodeScene](https://codescene.io) tooling
-to [Claude Code](https://claude.ai/code) (and any MCP client) plus a
-matching CLI suitable for Git hooks and CI.
+Portable Go binary that exposes [CodeScene](https://codescene.io) and
+[Codecov](https://codecov.io) tooling to [Claude Code](https://claude.ai/code)
+(and any MCP client) plus a matching CLI suitable for Git hooks and CI.
 
 The binary speaks two protocols:
 
-- **MCP** (`codescene-mcp serve`) — stdio transport, registered in
+- **MCP** (`codehealth-mcp serve`) — stdio transport, registered in
   `.mcp.json`. Claude calls the tools below to read project health,
-  inspect hotspots, and validate refactors before commit.
-- **CLI** (`codescene-mcp <subcommand>`) — same backends, exit-status
+  coverage, hotspots, and validate refactors before commit.
+- **CLI** (`codehealth-mcp <subcommand>`) — same backends, exit-status
   output, used by pre-commit hooks and shell scripts.
+
+> **Migrating from `codescene-mcp` v0.1.x?** Binary + module renamed to
+> `codehealth-mcp` in v0.2.0. Update `.mcp.json`'s `command` to
+> `codehealth-mcp` and re-run `go install github.com/nellcorp/codehealth-mcp/cmd/codehealth-mcp@latest`.
+> All existing CodeScene tool names (`health_overview`, `file_health`, …) are unchanged.
 
 ## Tools
 
@@ -21,11 +26,16 @@ The binary speaks two protocols:
 | `file_health` | CodeScene REST API | Score + biomarkers for one repo-relative path. |
 | `delta_check` | Local: `cs` CLI or gocyclo+gocognit | Scores staged or specified files vs HEAD. Use **before** committing. |
 | `score_file` | Local: same as above | One-file complexity probe. |
+| `coverage_overview` | Codecov REST API | Project coverage % vs the local `.codecov-thresholds` floor. |
+| `file_coverage` | Codecov REST API | Per-file coverage at a branch or commit SHA. |
+| `delta_coverage` | Codecov REST API | Coverage delta between two commits. Use **before** pushing/PR. |
 
-API tools require `CODESCENE_TOKEN` and `CODESCENE_PROJECT_ID`; local
-tools work without credentials.
+CodeScene API tools require `CODESCENE_TOKEN` and `CODESCENE_PROJECT_ID`.
+Codecov tools require `CODECOV_TOKEN` and `CODECOV_REPO`. Local CodeScene
+tools work without credentials. Each backend degrades independently —
+configuring only one is fine.
 
-### Two scoring paths
+### Two scoring paths (CodeScene)
 
 | Code state | Mechanism | Engine |
 |---|---|---|
@@ -39,15 +49,18 @@ post-push reanalysis. When `cs` is missing the binary prints a one-line
 warning to stderr and falls back to the Go heuristic; CI remains the
 authoritative gate.
 
+Codecov has only one path — the REST API — because coverage requires an
+uploaded report from CI.
+
 ## Installation
 
 ### Pre-built binary
 
-Download from [Releases](https://github.com/nellcorp/codescene-mcp/releases)
+Download from [Releases](https://github.com/nellcorp/codehealth-mcp/releases)
 or:
 
 ```bash
-go install github.com/nellcorp/codescene-mcp/cmd/codescene-mcp@latest
+go install github.com/nellcorp/codehealth-mcp/cmd/codehealth-mcp@latest
 ```
 
 ### Optional: install CodeScene `cs` CLI
@@ -58,24 +71,56 @@ The binary auto-detects `cs` on PATH; without it the pure-Go fallback runs.
 ## Configuration
 
 ```bash
-export CODESCENE_TOKEN=...            # required for API tools
-export CODESCENE_PROJECT_ID=12345     # required for API tools
-export CODESCENE_URL=https://api.codescene.io   # default
-export CS_CLI_PATH=cs                 # default
+# CodeScene
+export CODESCENE_TOKEN=...                          # required for CodeScene API tools
+export CODESCENE_PROJECT_ID=12345                   # required for CodeScene API tools
+export CODESCENE_URL=https://api.codescene.io       # default
+export CS_CLI_PATH=cs                               # default
+
+# Codecov
+export CODECOV_TOKEN=...                            # required for Codecov tools
+export CODECOV_REPO=github/nellcorp/codehealth-mcp  # required: service/owner/repo
+export CODECOV_URL=https://api.codecov.io           # default
 ```
+
+`CODECOV_REPO` is a single slug — copy from the Codecov UI URL. `service`
+is one of `github`, `github_enterprise`, `gitlab`, `gitlab_enterprise`,
+`bitbucket`, `bitbucket_server`.
+
+### Threshold files
+
+Two optional dotfiles. Missing files are treated as "no floor".
+
+`.codescene-thresholds`:
+```
+HOTSPOT_THRESHOLD=9.0
+AVERAGE_THRESHOLD=8.5
+```
+
+`.codecov-thresholds`:
+```
+COVERAGE_THRESHOLD=80.0
+COVERAGE_DELTA_THRESHOLD=-0.5
+```
+
+`COVERAGE_DELTA_THRESHOLD` is the maximum allowed coverage drop in
+percentage points (negative = tolerated drop, e.g. `-0.5` allows up to
+0.5pp regression).
 
 ### Claude Code (`.mcp.json`)
 
 ```json
 {
   "mcpServers": {
-    "codescene": {
-      "command": "codescene-mcp",
+    "codehealth": {
+      "command": "codehealth-mcp",
       "args": ["serve"],
       "env": {
         "CODESCENE_URL": "https://api.codescene.io",
         "CODESCENE_TOKEN": "${CODESCENE_TOKEN}",
-        "CODESCENE_PROJECT_ID": "12345"
+        "CODESCENE_PROJECT_ID": "12345",
+        "CODECOV_TOKEN": "${CODECOV_TOKEN}",
+        "CODECOV_REPO": "github/nellcorp/codehealth-mcp"
       }
     }
   }
@@ -89,23 +134,26 @@ Warn-only pre-commit gate; CI remains authoritative.
 ```yaml
 pre-commit:
   commands:
-    codescene-delta:
+    codehealth-delta:
       glob: "*.go"
       run: |
-        if ! command -v codescene-mcp >/dev/null; then
+        if ! command -v codehealth-mcp >/dev/null; then
           exit 0
         fi
-        codescene-mcp delta --staged || true
+        codehealth-mcp delta --staged || true
 ```
 
 ## CLI reference
 
 ```bash
-codescene-mcp serve                    # MCP server (stdio)
-codescene-mcp health                   # project scores + threshold floor
-codescene-mcp delta [--staged] [paths] # local delta vs HEAD (warn-only)
-codescene-mcp hotspots --limit 10      # top hotspots
-codescene-mcp file <path>              # file health + biomarkers
+codehealth-mcp serve                              # MCP server (stdio)
+codehealth-mcp health                             # CodeScene project scores + floor
+codehealth-mcp delta [--staged] [paths]           # local delta vs HEAD (warn-only)
+codehealth-mcp hotspots --limit 10                # CodeScene top hotspots
+codehealth-mcp file <path>                        # CodeScene file health + biomarkers
+codehealth-mcp coverage                           # Codecov project coverage + floor
+codehealth-mcp coverage-file <path> [--ref <r>]   # Codecov per-file coverage
+codehealth-mcp coverage-delta <base> <head>       # Codecov compare base..head
 ```
 
 ## Development
