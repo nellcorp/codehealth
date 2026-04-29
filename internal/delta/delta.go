@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nellcorp/codehealth-mcp/internal/local"
+	"github.com/nellcorp/codehealth/internal/local"
 )
 
 // Result describes the regression status for a batch of files.

@@ -22,7 +22,7 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X github.com/nellcorp/codehealth-mcp/internal/mcpsrv.Version={{.Version}}
+      - -X github.com/nellcorp/codehealth/internal/mcpsrv.Version={{.Version}}
 
 archives:
   - id: default
@@ -53,6 +53,6 @@ changelog:
 release:
   github:
     owner: nellcorp
-    name: codehealth-mcp
+    name: codehealth
   draft: false
   prerelease: auto

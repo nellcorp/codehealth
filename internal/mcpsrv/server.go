@@ -9,12 +9,12 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/nellcorp/codehealth-mcp/internal/api"
-	"github.com/nellcorp/codehealth-mcp/internal/codecov"
-	"github.com/nellcorp/codehealth-mcp/internal/config"
-	"github.com/nellcorp/codehealth-mcp/internal/delta"
-	"github.com/nellcorp/codehealth-mcp/internal/local"
-	"github.com/nellcorp/codehealth-mcp/internal/thresholds"
+	"github.com/nellcorp/codehealth/internal/api"
+	"github.com/nellcorp/codehealth/internal/codecov"
+	"github.com/nellcorp/codehealth/internal/config"
+	"github.com/nellcorp/codehealth/internal/delta"
+	"github.com/nellcorp/codehealth/internal/local"
+	"github.com/nellcorp/codehealth/internal/thresholds"
 )
 
 // Version is reported in the MCP handshake. Overwritten at link time

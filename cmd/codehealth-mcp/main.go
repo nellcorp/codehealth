@@ -24,13 +24,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/nellcorp/codehealth-mcp/internal/api"
-	"github.com/nellcorp/codehealth-mcp/internal/codecov"
-	"github.com/nellcorp/codehealth-mcp/internal/config"
-	"github.com/nellcorp/codehealth-mcp/internal/delta"
-	"github.com/nellcorp/codehealth-mcp/internal/local"
-	"github.com/nellcorp/codehealth-mcp/internal/mcpsrv"
-	"github.com/nellcorp/codehealth-mcp/internal/thresholds"
+	"github.com/nellcorp/codehealth/internal/api"
+	"github.com/nellcorp/codehealth/internal/codecov"
+	"github.com/nellcorp/codehealth/internal/config"
+	"github.com/nellcorp/codehealth/internal/delta"
+	"github.com/nellcorp/codehealth/internal/local"
+	"github.com/nellcorp/codehealth/internal/mcpsrv"
+	"github.com/nellcorp/codehealth/internal/thresholds"
 )
 
 // version is overridden at build time via -ldflags.

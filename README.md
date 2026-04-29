@@ -14,7 +14,7 @@ The binary speaks two protocols:
 
 > **Migrating from `codescene-mcp` v0.1.x?** Binary + module renamed to
 > `codehealth-mcp` in v0.2.0. Update `.mcp.json`'s `command` to
-> `codehealth-mcp` and re-run `go install github.com/nellcorp/codehealth-mcp/cmd/codehealth-mcp@latest`.
+> `codehealth-mcp` and re-run `go install github.com/nellcorp/codehealth/cmd/codehealth-mcp@latest`.
 > All existing CodeScene tool names (`health_overview`, `file_health`, …) are unchanged.
 
 ## Tools
@@ -56,11 +56,11 @@ uploaded report from CI.
 
 ### Pre-built binary
 
-Download from [Releases](https://github.com/nellcorp/codehealth-mcp/releases)
+Download from [Releases](https://github.com/nellcorp/codehealth/releases)
 or:
 
 ```bash
-go install github.com/nellcorp/codehealth-mcp/cmd/codehealth-mcp@latest
+go install github.com/nellcorp/codehealth/cmd/codehealth-mcp@latest
 ```
 
 ### Optional: install CodeScene `cs` CLI

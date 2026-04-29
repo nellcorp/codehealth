@@ -117,7 +117,7 @@ goreleaser release --snapshot --clean     # local multi-OS build
 ```
 
 Tag `vX.Y.Z` to cut a release — `release.yaml` runs goreleaser.
-Module path: `github.com/nellcorp/codehealth-mcp`.
+Module path: `github.com/nellcorp/codehealth`. Binary name: `codehealth-mcp`.
 
 ## Don'ts
 

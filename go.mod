@@ -1,4 +1,4 @@
-module github.com/nellcorp/codehealth-mcp
+module github.com/nellcorp/codehealth
 
 go 1.25.5
 
