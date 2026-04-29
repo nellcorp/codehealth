@@ -16,7 +16,7 @@ type Config struct {
 
 	CodecovBaseURL string // CODECOV_URL (default https://api.codecov.io)
 	CodecovToken   string // CODECOV_TOKEN
-	CodecovSlug    string // CODECOV_REPO  (e.g. "github/nellcorp/codehealth-mcp")
+	CodecovSlug    string // CODECOV_REPO  (e.g. "github/nellcorp/codehealth")
 }
 
 // FromEnv reads the configuration from process environment.

@@ -4,7 +4,7 @@ Guide for Claude Code (and humans) picking up work on this repo.
 
 ## What this is
 
-`codehealth-mcp` is a single Go binary that exposes CodeScene + Codecov
+`codehealth` is a single Go binary that exposes CodeScene + Codecov
 tooling to MCP clients (stdio transport) and as a CLI. Drop it into any
 repo so agents can verify code health and coverage **before** committing,
 pushing, or opening a PR. Two backends, unified tool surface.
@@ -13,7 +13,7 @@ pushing, or opening a PR. Two backends, unified tool surface.
 
 ```
 .
-├── cmd/codehealth-mcp/main.go     Cobra root; CLI subcommand wiring; ldflags-injected version.
+├── cmd/codehealth/main.go     Cobra root; CLI subcommand wiring; ldflags-injected version.
 ├── internal/
 │   ├── api/                       CodeScene REST v2 client.
 │   │   ├── client.go              ProjectHealth, Hotspots, FileHealth.
@@ -76,7 +76,7 @@ Conventions:
 
 ## Adding a new CLI subcommand
 
-In `cmd/codehealth-mcp/main.go`:
+In `cmd/codehealth/main.go`:
 
 1. Write a `fooCmd() *cobra.Command` factory (mirror `healthCmd`).
 2. Add to `root.AddCommand(...)` in `main()`.
@@ -92,7 +92,7 @@ Checklist:
 2. Hand-rolled `net/http` client w/ 20s timeout. Bearer token. Match shape of `internal/api/client.go::do()`.
 3. Add fields to `internal/config/Config` + reader in `FromEnv()` + a `XReady() error` guard + sentinel `ErrXNotConfigured`.
 4. Register MCP tools in `internal/mcpsrv/server.go::register()`.
-5. Add CLI subcommands in `cmd/codehealth-mcp/main.go`.
+5. Add CLI subcommands in `cmd/codehealth/main.go`.
 6. Optional: extend `internal/thresholds/parse.go` for a floor file.
 7. Update README tool table + env block. Update this file's Layout + Tool surface.
 
@@ -117,7 +117,7 @@ goreleaser release --snapshot --clean     # local multi-OS build
 ```
 
 Tag `vX.Y.Z` to cut a release — `release.yaml` runs goreleaser.
-Module path: `github.com/nellcorp/codehealth`. Binary name: `codehealth-mcp`.
+Module path: `github.com/nellcorp/codehealth`. Binary name: `codehealth`.
 
 ## Don'ts
 

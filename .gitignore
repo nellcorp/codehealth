@@ -1,5 +1,5 @@
 /dist/
-/codehealth-mcp
+/codehealth
 *.test
 *.out
 .idea/

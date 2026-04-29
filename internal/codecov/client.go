@@ -30,7 +30,7 @@ type Client struct {
 	HTTPClient *http.Client
 }
 
-// New returns a Client. slug must be "service/owner/repo" (e.g. "github/nellcorp/codehealth-mcp").
+// New returns a Client. slug must be "service/owner/repo" (e.g. "github/nellcorp/codehealth").
 // Returns a Client with empty service/owner/repo if slug is malformed; CoverageReady-style
 // guards in callers should prevent that path from being reached.
 func New(baseURL, token, slug string) *Client {

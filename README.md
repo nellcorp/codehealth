@@ -1,4 +1,4 @@
-# codehealth-mcp
+# codehealth
 
 Portable Go binary that exposes [CodeScene](https://codescene.io) and
 [Codecov](https://codecov.io) tooling to [Claude Code](https://claude.ai/code)
@@ -6,15 +6,15 @@ Portable Go binary that exposes [CodeScene](https://codescene.io) and
 
 The binary speaks two protocols:
 
-- **MCP** (`codehealth-mcp serve`) — stdio transport, registered in
+- **MCP** (`codehealth serve`) — stdio transport, registered in
   `.mcp.json`. Claude calls the tools below to read project health,
   coverage, hotspots, and validate refactors before commit.
-- **CLI** (`codehealth-mcp <subcommand>`) — same backends, exit-status
+- **CLI** (`codehealth <subcommand>`) — same backends, exit-status
   output, used by pre-commit hooks and shell scripts.
 
 > **Migrating from `codescene-mcp` v0.1.x?** Binary + module renamed to
-> `codehealth-mcp` in v0.2.0. Update `.mcp.json`'s `command` to
-> `codehealth-mcp` and re-run `go install github.com/nellcorp/codehealth/cmd/codehealth-mcp@latest`.
+> `codehealth` in v0.2.0. Update `.mcp.json`'s `command` to
+> `codehealth` and re-run `go install github.com/nellcorp/codehealth/cmd/codehealth@latest`.
 > All existing CodeScene tool names (`health_overview`, `file_health`, …) are unchanged.
 
 ## Tools
@@ -60,7 +60,7 @@ Download from [Releases](https://github.com/nellcorp/codehealth/releases)
 or:
 
 ```bash
-go install github.com/nellcorp/codehealth/cmd/codehealth-mcp@latest
+go install github.com/nellcorp/codehealth/cmd/codehealth@latest
 ```
 
 ### Optional: install CodeScene `cs` CLI
@@ -113,7 +113,7 @@ percentage points (negative = tolerated drop, e.g. `-0.5` allows up to
 {
   "mcpServers": {
     "codehealth": {
-      "command": "codehealth-mcp",
+      "command": "codehealth",
       "args": ["serve"],
       "env": {
         "CODESCENE_URL": "https://api.codescene.io",
@@ -137,23 +137,23 @@ pre-commit:
     codehealth-delta:
       glob: "*.go"
       run: |
-        if ! command -v codehealth-mcp >/dev/null; then
+        if ! command -v codehealth >/dev/null; then
           exit 0
         fi
-        codehealth-mcp delta --staged || true
+        codehealth delta --staged || true
 ```
 
 ## CLI reference
 
 ```bash
-codehealth-mcp serve                              # MCP server (stdio)
-codehealth-mcp health                             # CodeScene project scores + floor
-codehealth-mcp delta [--staged] [paths]           # local delta vs HEAD (warn-only)
-codehealth-mcp hotspots --limit 10                # CodeScene top hotspots
-codehealth-mcp file <path>                        # CodeScene file health + biomarkers
-codehealth-mcp coverage                           # Codecov project coverage + floor
-codehealth-mcp coverage-file <path> [--ref <r>]   # Codecov per-file coverage
-codehealth-mcp coverage-delta <base> <head>       # Codecov compare base..head
+codehealth serve                              # MCP server (stdio)
+codehealth health                             # CodeScene project scores + floor
+codehealth delta [--staged] [paths]           # local delta vs HEAD (warn-only)
+codehealth hotspots --limit 10                # CodeScene top hotspots
+codehealth file <path>                        # CodeScene file health + biomarkers
+codehealth coverage                           # Codecov project coverage + floor
+codehealth coverage-file <path> [--ref <r>]   # Codecov per-file coverage
+codehealth coverage-delta <base> <head>       # Codecov compare base..head
 ```
 
 ## Development

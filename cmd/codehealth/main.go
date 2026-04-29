@@ -1,15 +1,15 @@
-// Command codehealth-mcp exposes CodeScene + Codecov tooling over MCP and as a CLI.
+// Command codehealth exposes CodeScene + Codecov tooling over MCP and as a CLI.
 //
 // Usage:
 //
-//	codehealth-mcp serve                              # stdio MCP server
-//	codehealth-mcp health                             # CodeScene project scores + floor
-//	codehealth-mcp delta [--staged]                   # local delta check
-//	codehealth-mcp hotspots [--limit]                 # CodeScene top hotspots
-//	codehealth-mcp file <path>                        # CodeScene file health + biomarkers
-//	codehealth-mcp coverage                           # Codecov project coverage + floor
-//	codehealth-mcp coverage-file <path> [--ref <r>]   # Codecov per-file coverage
-//	codehealth-mcp coverage-delta <base> <head>       # Codecov compare base..head
+//	codehealth serve                              # stdio MCP server
+//	codehealth health                             # CodeScene project scores + floor
+//	codehealth delta [--staged]                   # local delta check
+//	codehealth hotspots [--limit]                 # CodeScene top hotspots
+//	codehealth file <path>                        # CodeScene file health + biomarkers
+//	codehealth coverage                           # Codecov project coverage + floor
+//	codehealth coverage-file <path> [--ref <r>]   # Codecov per-file coverage
+//	codehealth coverage-delta <base> <head>       # Codecov compare base..head
 //
 // All commands read configuration from environment variables. See README.
 package main
@@ -40,7 +40,7 @@ func main() {
 	local.WarnFallbackTo = func(msg string) { fmt.Fprintln(os.Stderr, msg) }
 
 	root := &cobra.Command{
-		Use:           "codehealth-mcp",
+		Use:           "codehealth",
 		Short:         "CodeScene + Codecov MCP server + CLI",
 		Version:       version,
 		SilenceUsage:  true,

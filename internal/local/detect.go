@@ -37,7 +37,7 @@ func warnFallbackOnce(bin string) {
 			bin = "cs"
 		}
 		WarnFallbackTo(fmt.Sprintf(
-			"codehealth-mcp: %q not found on PATH; using gocyclo+gocognit fallback. "+
+			"codehealth: %q not found on PATH; using gocyclo+gocognit fallback. "+
 				"Install CodeScene CLI for engine-accurate local scoring: "+
 				"https://codescene.io/docs/guides/cli/index.html", bin))
 	})

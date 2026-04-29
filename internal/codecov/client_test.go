@@ -14,18 +14,18 @@ func TestProjectCoverage(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
 			t.Errorf("auth header: got %q", got)
 		}
-		if !strings.HasPrefix(r.URL.Path, "/api/v2/github/nellcorp/repos/codehealth-mcp/") {
+		if !strings.HasPrefix(r.URL.Path, "/api/v2/github/nellcorp/repos/codehealth/") {
 			t.Errorf("path: got %q", r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"name":   "codehealth-mcp",
+			"name":   "codehealth",
 			"branch": "main",
 			"totals": map[string]any{"coverage": 87.42},
 		})
 	}))
 	defer srv.Close()
 
-	c := New(srv.URL, "tok", "github/nellcorp/codehealth-mcp")
+	c := New(srv.URL, "tok", "github/nellcorp/codehealth")
 	got, err := c.ProjectCoverage(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ func TestProjectCoverage(t *testing.T) {
 	if got.Coverage != 87.42 || got.DefaultBranch != "main" {
 		t.Fatalf("got %+v", got)
 	}
-	if got.Slug != "github/nellcorp/codehealth-mcp" {
+	if got.Slug != "github/nellcorp/codehealth" {
 		t.Fatalf("slug: got %q", got.Slug)
 	}
 }
