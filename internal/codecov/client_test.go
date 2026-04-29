@@ -11,7 +11,7 @@ import (
 
 func TestProjectCoverage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Token tok" {
+		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
 			t.Errorf("auth header: got %q", got)
 		}
 		if !strings.HasPrefix(r.URL.Path, "/api/v2/github/nellcorp/repos/codehealth/") {

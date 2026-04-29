@@ -59,7 +59,7 @@ func (c *Client) do(ctx context.Context, path string, query url.Values, out any)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Token "+c.Token)
+	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
