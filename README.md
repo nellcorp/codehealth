@@ -79,7 +79,7 @@ export CS_CLI_PATH=cs                               # default
 
 # Codecov
 export CODECOV_TOKEN=...                            # required for Codecov tools
-export CODECOV_REPO=github/nellcorp/codehealth-mcp  # required: service/owner/repo
+export CODECOV_REPO=github/nellcorp/codehealth      # required: service/owner/repo
 export CODECOV_URL=https://api.codecov.io           # default
 ```
 
@@ -120,7 +120,7 @@ percentage points (negative = tolerated drop, e.g. `-0.5` allows up to
         "CODESCENE_TOKEN": "${CODESCENE_TOKEN}",
         "CODESCENE_PROJECT_ID": "12345",
         "CODECOV_TOKEN": "${CODECOV_TOKEN}",
-        "CODECOV_REPO": "github/nellcorp/codehealth-mcp"
+        "CODECOV_REPO": "github/nellcorp/codehealth"
       }
     }
   }
