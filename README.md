@@ -52,6 +52,12 @@ authoritative gate.
 Codecov has only one path — the REST API — because coverage requires an
 uploaded report from CI.
 
+## Integrating into your repo
+
+For a complete drop-in recipe — `.mcp.json`, Lefthook hook, Makefile targets,
+slash commands, CI gate, ADR template, two-phase rollout — see the
+[**Integration Playbook**](docs/integration-playbook.md).
+
 ## Installation
 
 ### Pre-built binary
