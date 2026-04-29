@@ -392,7 +392,7 @@ codehealth serve         # MCP server lists 8 tools (5 CodeScene + 3 Codecov)
 
 ## Known issues / gotchas
 
-1. **Codecov auth scheme.** `codehealth` sends `Authorization: Bearer <token>`. The Codecov v2 REST API requires a **Personal API token** for that scheme — the repo *upload* token used by `codecov-action` is rejected with `401 Invalid token`. Mint the API token at `app.codecov.io/account/<service>/<user>/access`. Workaround if only an upload token is available: direct curl works with `Authorization: Token <upload>` but `codehealth` does not currently support that scheme; track upstream.
+1. **Codecov auth scheme.** `codehealth` v0.2.1+ sends `Authorization: Token <token>` (the scheme the Codecov v2 REST API expects). Mint a **Personal API token** at `app.codecov.io/account/<service>/<user>/access` — the repo *upload* token used by `codecov-action` is a different secret and the v2 API rejects it with `401 Invalid token`. v0.2.0 sent `Bearer` and is broken against Codecov; upgrade to v0.2.1+.
 2. **Tagged release lag.** If `go install …@latest` resolves to a tag that predates the rename (e.g. v0.1.x of `codehealth` still ships `cmd/codescene-mcp`), pin to `@main` until v0.2.0+ is tagged, or download a release binary directly.
 3. **Activate the repo on Codecov first.** Coverage tools 404 on repos not yet activated. Push at least one coverage report (via `codecov-action` in a CI workflow) before relying on `coverage_overview`.
 4. **Sensitive-file gate.** Some Claude Code harnesses treat `.mcp.json` and `.claude/commands/*.md` as sensitive and prompt regardless of allowlist. Approve once per file or use `bypassPermissions` mode for the session.
