@@ -24,6 +24,10 @@ The binary speaks two protocols:
 | `health_overview` | CodeScene REST API | Live hotspot + average score; compared against the local `.codescene-thresholds` floor. |
 | `list_hotspots` | CodeScene REST API | Top-N files by churn × complexity. |
 | `file_health` | CodeScene REST API | Score + biomarkers for one repo-relative path. |
+| `component_health` | CodeScene REST API | Architectural-component health from the latest analysis. |
+| `list_code_reviews` | CodeScene REST API | Recent CodeScene Code Reviews (delta-analyses) the PR integration ran. |
+| `code_review` | CodeScene REST API | One Code Review by id — per-file before/after `code_health`, failed gates, commits. |
+| `kpi_trend` | CodeScene REST API | 4-factors dashboard trend line (`code-health`, `delivery`, `knowledge`, `team-code-alignment`). |
 | `delta_check` | Local: `cs` CLI or gocyclo+gocognit | Scores staged or specified files vs HEAD. Use **before** committing. |
 | `score_file` | Local: same as above | One-file complexity probe. |
 | `coverage_overview` | Codecov REST API | Project coverage % vs the local `.codecov-thresholds` floor. |
@@ -157,6 +161,10 @@ codehealth health                             # CodeScene project scores + floor
 codehealth delta [--staged] [paths]           # local delta vs HEAD (warn-only)
 codehealth hotspots --limit 10                # CodeScene top hotspots
 codehealth file <path>                        # CodeScene file health + biomarkers
+codehealth components                         # architectural-component health
+codehealth list-code-reviews [--page]         # CodeScene Code Reviews (delta-analyses)
+codehealth code-review <id>                   # one Code Review by id
+codehealth kpi-trend <factor> [kpi]           # 4-factors dashboard trend line
 codehealth coverage                           # Codecov project coverage + floor
 codehealth coverage-file <path> [--ref <r>]   # Codecov per-file coverage
 codehealth coverage-delta <base> <head>       # Codecov compare base..head

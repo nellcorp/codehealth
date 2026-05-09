@@ -2,10 +2,14 @@
 //
 // Endpoints used:
 //
-//	GET /v2/projects/{id}                          → project-level scores
-//	GET /v2/projects/{id}/analyses/latest/files    → file-level health
-//	                                                 (filter=hotspot:true for hotspots,
-//	                                                  filter=path:<p> for one file)
+//	GET /v2/projects/{id}                                          → project-level scores
+//	GET /v2/projects/{id}/analyses/latest/files                    → file-level health
+//	                                                                 (filter=hotspot:true for hotspots,
+//	                                                                  filter=path:<p> for one file)
+//	GET /v2/projects/{id}/analyses/latest/components               → architectural component scores
+//	GET /v2/projects/{id}/delta-analyses                           → list past Code Reviews (PR-triggered)
+//	GET /v2/projects/{id}/delta-analyses/{id}                      → one Code Review (file_results, gates, deltas)
+//	GET /v2/projects/{id}/kpi-trend/{factor}[/{kpi}]               → 4-factors dashboard trend lines
 //
 // Auth: Bearer token from CODESCENE_TOKEN.
 package api
@@ -19,6 +23,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -40,8 +45,9 @@ func New(baseURL, token, projectID string) *Client {
 	}
 }
 
+// do issues an authenticated GET and decodes the JSON response into out.
 func (c *Client) do(ctx context.Context, path string, query url.Values, out any) error {
-	u := fmt.Sprintf("%s%s", c.BaseURL, path)
+	u := c.BaseURL + path
 	if len(query) > 0 {
 		u = u + "?" + query.Encode()
 	}
@@ -174,6 +180,121 @@ func (c *Client) FileHealth(ctx context.Context, path string) (*FileHealth, erro
 		LinesOfCode:     hit.LinesOfCode,
 		Biomarkers:      hit.CodeHealthRuleViolations,
 	}, nil
+}
+
+// ListCodeReviews returns a paginated list of past Code Reviews
+// (delta-analyses triggered by CodeScene's PR/CI integration).
+func (c *Client) ListCodeReviews(ctx context.Context, page int, filter string) (*CodeReviewList, error) {
+	q := url.Values{}
+	if page > 0 {
+		q.Set("page", strconv.Itoa(page))
+	}
+	if filter != "" {
+		q.Set("filter", filter)
+	}
+	var raw struct {
+		Page          int          `json:"page"`
+		MaxPages      int          `json:"max_pages"`
+		DeltaAnalyses []CodeReview `json:"delta_analyses"`
+	}
+	path := "/v2/projects/" + c.ProjectID + "/delta-analyses"
+	if err := c.do(ctx, path, q, &raw); err != nil {
+		return nil, err
+	}
+	return &CodeReviewList{
+		Page:     raw.Page,
+		MaxPages: raw.MaxPages,
+		Reviews:  raw.DeltaAnalyses,
+	}, nil
+}
+
+// CodeReview fetches one delta-analysis by id, including per-file
+// code_health old/new and quality-gate results.
+func (c *Client) CodeReview(ctx context.Context, id string) (*CodeReview, error) {
+	if id == "" {
+		return nil, fmt.Errorf("codescene: review id required")
+	}
+	var out CodeReview
+	path := "/v2/projects/" + c.ProjectID + "/delta-analyses/" + url.PathEscape(id)
+	if err := c.do(ctx, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Components returns architectural-component health from the latest analysis.
+//
+// Response shape varies by deployment — some wrap in {"components": [...]},
+// some return a bare array. decodeComponents handles both.
+func (c *Client) Components(ctx context.Context) ([]Component, error) {
+	var raw json.RawMessage
+	path := "/v2/projects/" + c.ProjectID + "/analyses/latest/components"
+	if err := c.do(ctx, path, nil, &raw); err != nil {
+		return nil, err
+	}
+	return decodeComponents(raw)
+}
+
+func decodeComponents(raw json.RawMessage) ([]Component, error) {
+	var wrapped struct {
+		Components []Component `json:"components"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err == nil && wrapped.Components != nil {
+		return wrapped.Components, nil
+	}
+	var arr []Component
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return nil, fmt.Errorf("codescene: decode components: %w", err)
+	}
+	return arr, nil
+}
+
+// KPITrend fetches a CodeScene 4-factors trend line. Factor is one of
+// `code-health`, `delivery`, `knowledge`, `team-code-alignment`. KPI is
+// optional (factor-only paths return the headline KPI). Start and end are
+// ISO-8601 dates ("YYYY-MM-DD"); empty defaults to the server's range.
+//
+// Response is passed through as raw JSON because the shape differs per
+// factor and is documented loosely.
+func (c *Client) KPITrend(ctx context.Context, factor, kpi, start, end string) (json.RawMessage, error) {
+	if factor == "" {
+		return nil, fmt.Errorf("codescene: kpi factor required")
+	}
+	path := "/v2/projects/" + c.ProjectID + "/kpi-trend/" + url.PathEscape(factor)
+	if kpi != "" {
+		path += "/" + url.PathEscape(kpi)
+	}
+	q := url.Values{}
+	if start != "" {
+		q.Set("start", start)
+	}
+	if end != "" {
+		q.Set("end", end)
+	}
+	var raw json.RawMessage
+	if err := c.do(ctx, path, q, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+// ValidKPIFactors lists the documented factor segments accepted by
+// /v2/projects/{id}/kpi-trend/{factor}.
+var ValidKPIFactors = []string{
+	"code-health",
+	"delivery",
+	"knowledge",
+	"team-code-alignment",
+}
+
+// IsValidKPIFactor reports whether s is one of the documented factors.
+func IsValidKPIFactor(s string) bool {
+	for _, f := range ValidKPIFactors {
+		if strings.EqualFold(s, f) {
+			return true
+		}
+	}
+	return false
 }
 
 func maxPageSize(limit int) int {
