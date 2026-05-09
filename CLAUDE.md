@@ -16,8 +16,8 @@ pushing, or opening a PR. Two backends, unified tool surface.
 ├── cmd/codehealth/main.go     Cobra root; CLI subcommand wiring; ldflags-injected version.
 ├── internal/
 │   ├── api/                       CodeScene REST v2 client.
-│   │   ├── client.go              ProjectHealth, Hotspots, FileHealth.
-│   │   ├── types.go               ProjectHealth, Hotspot, FileHealth, Biomarker, flexFloat.
+│   │   ├── client.go              ProjectHealth, Hotspots, FileHealth, Components, ListCodeReviews, CodeReview, KPITrend.
+│   │   ├── types.go               ProjectHealth, Hotspot, FileHealth, Biomarker, Component, CodeReview, CodeReviewFile, flexFloat.
 │   │   └── client_test.go         httptest fixtures.
 │   ├── codecov/                   Codecov REST v2 client.
 │   │   ├── client.go              ProjectCoverage, FileCoverage, Compare.
@@ -36,9 +36,10 @@ pushing, or opening a PR. Two backends, unified tool surface.
 └── README.md                      user-facing docs.
 ```
 
-## Tool surface (8 total)
+## Tool surface (12 total)
 
-CodeScene: `health_overview`, `list_hotspots`, `file_health`, `delta_check`, `score_file`.
+CodeScene API: `health_overview`, `list_hotspots`, `file_health`, `component_health`, `list_code_reviews`, `code_review`, `kpi_trend`.
+CodeScene local: `delta_check`, `score_file`.
 Codecov: `coverage_overview`, `file_coverage`, `delta_coverage`.
 
 CodeScene API tools require `CODESCENE_TOKEN` + `CODESCENE_PROJECT_ID`.
@@ -46,6 +47,15 @@ Codecov tools require `CODECOV_TOKEN` + `CODECOV_REPO` (`service/owner/repo`).
 Local CodeScene tools (`delta_check`, `score_file`) need no creds.
 
 Each backend's `Ready()` guard is independent — partial config is fine.
+
+### Code Review note
+
+`code_review` reads delta-analyses **already triggered** by CodeScene's PR
+integration (GitHub/GitLab/etc). The cloud REST API (`api.codescene.io`) does
+not expose an on-demand `POST /delta-analysis` — that path is enterprise
+self-hosted only. Flow: enable CodeScene's PR integration → CodeScene reviews
+each PR → `list_code_reviews` to find the id → `code_review` for per-file
+`code_health` deltas + failed gates.
 
 ## Adding a new MCP tool
 

@@ -44,13 +44,13 @@ type Biomarker struct {
 // CodeScene encodes scores as either a JSON number or the literal string
 // "-" when no score is available. flexFloat handles both.
 type rawFile struct {
-	Path                      string                 `json:"path"`
-	Language                  string                 `json:"language"`
-	LinesOfCode               int                    `json:"lines_of_code"`
-	ChangeFrequency           int                    `json:"change_frequency"`
-	Hotspot                   bool                   `json:"hotspot"`
-	CodeHealth                rawCodeHealth          `json:"code_health"`
-	CodeHealthRuleViolations  []Biomarker            `json:"code_health_rule_violations"`
+	Path                     string        `json:"path"`
+	Language                 string        `json:"language"`
+	LinesOfCode              int           `json:"lines_of_code"`
+	ChangeFrequency          int           `json:"change_frequency"`
+	Hotspot                  bool          `json:"hotspot"`
+	CodeHealth               rawCodeHealth `json:"code_health"`
+	CodeHealthRuleViolations []Biomarker   `json:"code_health_rule_violations"`
 }
 
 type rawCodeHealth struct {
@@ -88,4 +88,78 @@ func (f *flexFloat) UnmarshalJSON(b []byte) error {
 	}
 	f.Set = true
 	return nil
+}
+
+// CodeReviewList is the paginated wrapper returned by
+// GET /v2/projects/{id}/delta-analyses.
+type CodeReviewList struct {
+	Page     int          `json:"page"`
+	MaxPages int          `json:"max_pages"`
+	Reviews  []CodeReview `json:"reviews"`
+}
+
+// CodeReview is the shape returned by both /delta-analyses (list items)
+// and /delta-analyses/{id} (full detail). Detail responses include
+// FileResults; list items typically omit them.
+type CodeReview struct {
+	ID              json.Number       `json:"id,omitempty"`
+	ProjectID       json.Number       `json:"project_id,omitempty"`
+	Repository      string            `json:"repository,omitempty"`
+	BaseRef         string            `json:"base_ref,omitempty"`
+	BranchHead      string            `json:"delta_branch_head,omitempty"`
+	Commits         []string          `json:"commits,omitempty"`
+	Authors         []string          `json:"authors,omitempty"`
+	AnalysisTime    json.RawMessage   `json:"analysistime,omitempty"`
+	CodeHealth      *float64          `json:"code_health,omitempty"`
+	OldCodeHealth   *float64          `json:"old_code_health,omitempty"`
+	EnabledGates    json.RawMessage   `json:"enabled_gates,omitempty"`
+	FailedGates     json.RawMessage   `json:"failed_gates,omitempty"`
+	ExternalReview  string            `json:"external_review_id,omitempty"`
+	FileResults     []CodeReviewFile  `json:"file_results,omitempty"`
+	Directives      json.RawMessage   `json:"directives,omitempty"`
+}
+
+// CodeReviewFile is one entry in CodeReview.FileResults — per-file
+// before/after code health.
+type CodeReviewFile struct {
+	File          string   `json:"file"`
+	LOC           int      `json:"loc,omitempty"`
+	OldLOC        int      `json:"old-loc,omitempty"`
+	CodeHealth    *float64 `json:"code_health,omitempty"`
+	OldCodeHealth *float64 `json:"old_code_health,omitempty"`
+}
+
+// Component is one entry from /v2/projects/{id}/analyses/latest/components.
+type Component struct {
+	Name            string             `json:"name"`
+	Ref             string             `json:"ref,omitempty"`
+	Age             int                `json:"age,omitempty"`
+	ChangeFrequency int                `json:"change_frequency,omitempty"`
+	LinesOfCode     int                `json:"lines_of_code,omitempty"`
+	SystemHealth    componentHealthRef `json:"system_health,omitempty"`
+}
+
+type componentHealthRef struct {
+	CurrentScore flexFloat `json:"current_score"`
+}
+
+// MarshalJSON flattens system_health.current_score to a plain number for
+// downstream readability.
+func (c Component) MarshalJSON() ([]byte, error) {
+	type alias struct {
+		Name            string  `json:"name"`
+		Ref             string  `json:"ref,omitempty"`
+		Age             int     `json:"age,omitempty"`
+		ChangeFrequency int     `json:"change_frequency,omitempty"`
+		LinesOfCode     int     `json:"lines_of_code,omitempty"`
+		Health          float64 `json:"health,omitempty"`
+	}
+	return json.Marshal(alias{
+		Name:            c.Name,
+		Ref:             c.Ref,
+		Age:             c.Age,
+		ChangeFrequency: c.ChangeFrequency,
+		LinesOfCode:     c.LinesOfCode,
+		Health:          c.SystemHealth.CurrentScore.Value,
+	})
 }

@@ -7,6 +7,10 @@
 //	codehealth delta [--staged]                   # local delta check
 //	codehealth hotspots [--limit]                 # CodeScene top hotspots
 //	codehealth file <path>                        # CodeScene file health + biomarkers
+//	codehealth list-code-reviews [--page]         # CodeScene Code Reviews (delta-analyses) list
+//	codehealth code-review <id>                   # one Code Review by id
+//	codehealth components                         # architectural-component health
+//	codehealth kpi-trend <factor> [kpi] [--start] # 4-factors dashboard trend line
 //	codehealth coverage                           # Codecov project coverage + floor
 //	codehealth coverage-file <path> [--ref <r>]   # Codecov per-file coverage
 //	codehealth coverage-delta <base> <head>       # Codecov compare base..head
@@ -49,6 +53,7 @@ func main() {
 	root.AddCommand(
 		serveCmd(),
 		healthCmd(), deltaCmd(), hotspotsCmd(), fileCmd(),
+		listCodeReviewsCmd(), codeReviewCmd(), componentsCmd(), kpiTrendCmd(),
 		coverageCmd(), coverageFileCmd(), coverageDeltaCmd(),
 	)
 
@@ -181,6 +186,104 @@ func fileCmd() *cobra.Command {
 			return printJSON(fh)
 		},
 	}
+}
+
+func listCodeReviewsCmd() *cobra.Command {
+	var (
+		page   int
+		filter string
+	)
+	c := &cobra.Command{
+		Use:   "list-code-reviews",
+		Short: "List CodeScene Code Reviews (delta-analyses) for the project",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg := config.FromEnv()
+			if err := cfg.APIReady(); err != nil {
+				return err
+			}
+			out, err := api.New(cfg.APIBaseURL, cfg.APIToken, cfg.ProjectID).
+				ListCodeReviews(cmd.Context(), page, filter)
+			if err != nil {
+				return err
+			}
+			return printJSON(out)
+		},
+	}
+	c.Flags().IntVar(&page, "page", 1, "1-based page number")
+	c.Flags().StringVar(&filter, "filter", "", "CodeScene filter expression")
+	return c
+}
+
+func codeReviewCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "code-review <id>",
+		Short: "Print one CodeScene Code Review (delta-analysis) by id",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := config.FromEnv()
+			if err := cfg.APIReady(); err != nil {
+				return err
+			}
+			out, err := api.New(cfg.APIBaseURL, cfg.APIToken, cfg.ProjectID).
+				CodeReview(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			return printJSON(out)
+		},
+	}
+}
+
+func componentsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "components",
+		Short: "Print architectural-component health from the latest analysis",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg := config.FromEnv()
+			if err := cfg.APIReady(); err != nil {
+				return err
+			}
+			comps, err := api.New(cfg.APIBaseURL, cfg.APIToken, cfg.ProjectID).
+				Components(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return printJSON(comps)
+		},
+	}
+}
+
+func kpiTrendCmd() *cobra.Command {
+	var start, end string
+	c := &cobra.Command{
+		Use:   "kpi-trend <factor> [kpi]",
+		Short: "Print a CodeScene 4-factors trend line",
+		Args:  cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := config.FromEnv()
+			if err := cfg.APIReady(); err != nil {
+				return err
+			}
+			factor := args[0]
+			if !api.IsValidKPIFactor(factor) {
+				return fmt.Errorf("factor must be one of %v", api.ValidKPIFactors)
+			}
+			var kpi string
+			if len(args) > 1 {
+				kpi = args[1]
+			}
+			raw, err := api.New(cfg.APIBaseURL, cfg.APIToken, cfg.ProjectID).
+				KPITrend(cmd.Context(), factor, kpi, start, end)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(raw))
+			return nil
+		},
+	}
+	c.Flags().StringVar(&start, "start", "", "ISO-8601 start date (YYYY-MM-DD)")
+	c.Flags().StringVar(&end, "end", "", "ISO-8601 end date (YYYY-MM-DD)")
+	return c
 }
 
 func coverageCmd() *cobra.Command {

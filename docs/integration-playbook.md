@@ -9,11 +9,12 @@ This playbook captures the integration applied to `nellcorp/hip`. Copy verbatim;
 ## What you get
 
 - **MCP server** registered in `.mcp.json`, consumed by Claude Code. Tools:
-  - CodeScene: `health_overview`, `list_hotspots`, `file_health`, `delta_check`, `score_file`
+  - CodeScene API: `health_overview`, `list_hotspots`, `file_health`, `component_health`, `list_code_reviews`, `code_review`, `kpi_trend`
+  - CodeScene local: `delta_check`, `score_file`
   - Codecov: `coverage_overview`, `file_coverage`, `delta_coverage`
-- **CLI subcommands** for Lefthook + Make: `codehealth health`, `codehealth coverage`, `codehealth delta --staged`, `codehealth hotspots`, `codehealth file`, `codehealth coverage-file`, `codehealth coverage-delta`.
+- **CLI subcommands** for Lefthook + Make: `codehealth health`, `codehealth coverage`, `codehealth delta --staged`, `codehealth hotspots`, `codehealth file`, `codehealth components`, `codehealth list-code-reviews`, `codehealth code-review <id>`, `codehealth kpi-trend <factor> [kpi]`, `codehealth coverage-file`, `codehealth coverage-delta`.
 - **Pre-commit Lefthook hook** that surfaces complexity regressions on staged Go files. Warn-only — never blocks a commit.
-- **Two slash commands** for Claude Code (`/health-check`, `/refactor-hotspots`).
+- **Three slash commands** for Claude Code (`/health-check`, `/refactor-hotspots`, `/pr-review`).
 - **Skip-on-missing semantics** — every entry-point silently no-ops when the binary is absent. CI gates remain authoritative.
 
 ---
@@ -58,6 +59,7 @@ For local development export them in your shell or via a non-committed `.env` fi
 .coverage-thresholds                       ← BACKEND_MIN (local floor)
 .claude/commands/health-check.md           ← /health-check slash command
 .claude/commands/refactor-hotspots.md      ← /refactor-hotspots slash command
+.claude/commands/pr-review.md              ← /pr-review slash command (CodeScene Code Review reader)
 docs/adr/NNNN-codehealth-integration.md    ← record the decision
 lefthook.yml                               ← pre-commit + commit-msg hooks
 Makefile                                   ← health-check + coverage-health targets
@@ -159,6 +161,29 @@ Use the `codehealth` MCP server to report current code health for this repo:
 4. If any local Go files are staged, call `delta_check` with `staged=true` and report whether the staged change is net-positive, neutral, or net-negative.
 
 Stay terse. The user wants a quick snapshot, not a refactor session.
+```
+
+### `.claude/commands/pr-review.md`
+
+Reads CodeScene's automatic Code Review for the current branch / latest PR. Requires CodeScene's PR integration (GitHub/GitLab/Bitbucket/Azure/Gerrit) to be configured against this project — without it, `list_code_reviews` returns empty.
+
+```markdown
+---
+description: Pull CodeScene's Code Review (delta-analysis) for the latest PR / branch and report the per-file code_health deltas + failed gates.
+---
+
+Read CodeScene's verdict on the current change set:
+
+1. Call `list_code_reviews` with `page=1`. Pick the most recent review whose `commits` overlap the current branch's commit list, or — if uncertain — the most recent review.
+2. Call `code_review` with that review's `id`. Show:
+   - `repository`, `commits`, `authors`
+   - `code_health` vs `old_code_health` (top-level delta)
+   - per-file `file_results[]`: `file`, `code_health` vs `old_code_health`, `loc` vs `old-loc`. Sort by largest negative delta first.
+   - `failed_gates` (if any) — these block the PR in CodeScene's gate.
+3. For each file with a negative delta, optionally call `file_health` to fetch current biomarkers so we can name the smell driving the regression.
+4. End with a one-line verdict: pass / warn / fail and the worst-regressed file.
+
+Stay terse. Do NOT propose refactors here — pair with `/refactor-hotspots` for that.
 ```
 
 ### `.claude/commands/refactor-hotspots.md`
@@ -381,11 +406,17 @@ git commit ...                           # Lefthook codehealth-delta hook silent
 export CODESCENE_TOKEN=... CODECOV_TOKEN=...
 make health-check        # prints CodeScene scores + threshold verdict
 make coverage-health     # prints Codecov coverage + floor verdict
-codehealth serve         # MCP server lists 8 tools (5 CodeScene + 3 Codecov)
+codehealth serve         # MCP server lists 12 tools (9 CodeScene + 3 Codecov)
+
+# Smoke-test the new CodeScene API tools (cloud):
+codehealth components                    # architectural-component health
+codehealth list-code-reviews             # past CodeScene Code Reviews (empty until PR integration runs)
+codehealth kpi-trend code-health hotspots --start 2026-01-01
 
 # Smoke-test the slash commands in Claude Code:
 /health-check            # snapshot of scores + coverage + hotspots + optional staged delta
 /refactor-hotspots       # guided refactor against worst hotspot
+/pr-review               # read CodeScene's Code Review for the current PR
 ```
 
 ---
@@ -396,6 +427,8 @@ codehealth serve         # MCP server lists 8 tools (5 CodeScene + 3 Codecov)
 2. **Tagged release lag.** If `go install …@latest` resolves to a tag that predates the rename (e.g. v0.1.x of `codehealth` still ships `cmd/codescene-mcp`), pin to `@main` until v0.2.0+ is tagged, or download a release binary directly.
 3. **Activate the repo on Codecov first.** Coverage tools 404 on repos not yet activated. Push at least one coverage report (via `codecov-action` in a CI workflow) before relying on `coverage_overview`.
 4. **Sensitive-file gate.** Some Claude Code harnesses treat `.mcp.json` and `.claude/commands/*.md` as sensitive and prompt regardless of allowlist. Approve once per file or use `bypassPermissions` mode for the session.
+5. **Code Review tools depend on CodeScene's PR integration.** `list_code_reviews` and `code_review` read delta-analyses CodeScene runs automatically when its GitHub/GitLab/Bitbucket/Azure/Gerrit integration is enabled on the project. Without it both tools return empty / 404. Cloud (`api.codescene.io`) does **not** expose an on-demand `POST /delta-analysis` — that endpoint is enterprise self-hosted only. Configure the PR integration in the CodeScene dashboard (Project → Configure → Pull Request Integration) before relying on `/pr-review`.
+6. **`component_health` is empty until architectural components are configured.** Define them in the CodeScene dashboard (Project → Configure → Architectural Components) — pure file-tree projects return `[]`.
 
 ---
 
@@ -418,6 +451,8 @@ Right response is *not* "lower the threshold". It is one of:
 ## Maintenance cadence
 
 - **Weekly** — review the top hotspot list (`/health-check` in Claude Code, or `codehealth hotspots --limit 10`). Top 3 dictate next refactor priority. `/refactor-hotspots` drives a guided session.
+- **Per PR** — if CodeScene's PR integration is enabled, run `/pr-review` (or `codehealth list-code-reviews` → `codehealth code-review <id>`) to read CodeScene's verdict before requesting human review. Pair with `/refactor-hotspots` when a file regresses.
+- **Monthly** — sanity-check the 4-factors trend lines: `codehealth kpi-trend code-health hotspots`, `codehealth kpi-trend delivery`, `codehealth kpi-trend knowledge code-familiarity`. Sustained downward slope = pull a refactor cycle forward.
 - **Per release** — ratchet thresholds upward when scores have improved. One-line PR, no ADR for tightening.
-- **Per architectural change** — write an ADR.
-- **codehealth version bumps** — pin in dev install instructions when shipping a major change. Use upstream release notes.
+- **Per architectural change** — write an ADR. Update CodeScene's architectural-component config so `component_health` continues to track the new layout.
+- **codehealth version bumps** — pin in dev install instructions when shipping a major change. Use upstream release notes. v0.3.x adds `component_health`, `list_code_reviews`, `code_review`, `kpi_trend` (additive — no breaking changes vs v0.2.x).

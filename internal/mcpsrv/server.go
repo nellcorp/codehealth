@@ -130,6 +130,89 @@ func register(s *server.MCPServer, cfg *config.Config) {
 	)
 
 	s.AddTool(
+		mcp.NewTool("list_code_reviews",
+			mcp.WithDescription("List CodeScene Code Reviews (delta-analyses) for the project — the per-PR analyses CodeScene runs automatically via its Git integration. Use to discover review IDs to feed into code_review."),
+			mcp.WithNumber("page", mcp.Description("1-based page number"), mcp.DefaultNumber(1)),
+			mcp.WithString("filter", mcp.Description("optional CodeScene filter expression (e.g. branch:main)"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if err := cfg.APIReady(); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			page := int(req.GetFloat("page", 1))
+			filter := req.GetString("filter", "")
+			out, err := apiClient.ListCodeReviews(ctx, page, filter)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return jsonResult(out)
+		},
+	)
+
+	s.AddTool(
+		mcp.NewTool("code_review",
+			mcp.WithDescription("Fetch one CodeScene Code Review (delta-analysis) by id. Returns per-file before/after code_health, failed quality gates, repository, commits, and authors. Use to read CodeScene's verdict on a PR."),
+			mcp.WithString("id", mcp.Required(), mcp.Description("delta-analysis id from list_code_reviews"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if err := cfg.APIReady(); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			id, err := req.RequireString("id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			out, err := apiClient.CodeReview(ctx, id)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return jsonResult(out)
+		},
+	)
+
+	s.AddTool(
+		mcp.NewTool("component_health",
+			mcp.WithDescription("Architectural-component health from the latest analysis. Subsystem-level scoring — broader than file_health, narrower than health_overview.")),
+		func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if err := cfg.APIReady(); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			comps, err := apiClient.Components(ctx)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return jsonResult(comps)
+		},
+	)
+
+	s.AddTool(
+		mcp.NewTool("kpi_trend",
+			mcp.WithDescription("CodeScene 4-factors dashboard trend line. Factor is one of code-health, delivery, knowledge, team-code-alignment. Optional kpi narrows to a sub-metric (e.g. hotspots, code-familiarity, team-cohesion)."),
+			mcp.WithString("factor", mcp.Required(), mcp.Description("one of: code-health, delivery, knowledge, team-code-alignment")),
+			mcp.WithString("kpi", mcp.Description("optional sub-KPI; omit for the headline trend")),
+			mcp.WithString("start", mcp.Description("ISO-8601 date YYYY-MM-DD; defaults to server range")),
+			mcp.WithString("end", mcp.Description("ISO-8601 date YYYY-MM-DD; defaults to server range"))),
+		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if err := cfg.APIReady(); err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			factor, err := req.RequireString("factor")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			if !api.IsValidKPIFactor(factor) {
+				return mcp.NewToolResultError(fmt.Sprintf("factor must be one of %v", api.ValidKPIFactors)), nil
+			}
+			kpi := req.GetString("kpi", "")
+			start := req.GetString("start", "")
+			end := req.GetString("end", "")
+			raw, err := apiClient.KPITrend(ctx, factor, kpi, start, end)
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			return mcp.NewToolResultText(string(raw)), nil
+		},
+	)
+
+	s.AddTool(
 		mcp.NewTool("coverage_overview",
 			mcp.WithDescription("Project-level Codecov coverage percentage plus the local repository's coverage floor. Pair with health_overview to see both code-quality and coverage gates.")),
 		func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {

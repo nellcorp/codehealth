@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -101,6 +102,168 @@ func TestFileHealthMatchesPath(t *testing.T) {
 	}
 	if len(got.Biomarkers) != 1 || got.Biomarkers[0].CodeSmell != "Bumpy Road" {
 		t.Fatalf("got %+v", got.Biomarkers)
+	}
+}
+
+func TestListCodeReviews(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/v2/projects/42/delta-analyses") {
+			t.Errorf("path: %q", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("page"); got != "2" {
+			t.Errorf("page: %q", got)
+		}
+		_, _ = w.Write([]byte(`{
+			"page": 2, "max_pages": 5,
+			"delta_analyses": [
+				{"id": 101, "repository": "honey-cheetah", "commits": ["abc"], "code_health": 9.1, "old_code_health": 9.4}
+			]
+		}`))
+	}))
+	defer srv.Close()
+
+	got, err := New(srv.URL, "tok", "42").ListCodeReviews(context.Background(), 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Page != 2 || got.MaxPages != 5 || len(got.Reviews) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	if got.Reviews[0].Repository != "honey-cheetah" {
+		t.Fatalf("review: %+v", got.Reviews[0])
+	}
+	if got.Reviews[0].CodeHealth == nil || *got.Reviews[0].CodeHealth != 9.1 {
+		t.Fatalf("code_health: %+v", got.Reviews[0].CodeHealth)
+	}
+}
+
+func TestCodeReviewDecodesDetail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/v2/projects/42/delta-analyses/101") {
+			t.Errorf("path: %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{
+			"id": 101,
+			"project_id": 42,
+			"repository": "honey-cheetah",
+			"commits": ["abc","def"],
+			"code_health": 9.1,
+			"old_code_health": 9.4,
+			"enabled_gates": {"degrades_in_code_health": true},
+			"failed_gates": {"degrades_in_code_health": true},
+			"file_results": [
+				{"file":"a.go","loc":120,"old-loc":110,"code_health":7.2,"old_code_health":8.1}
+			],
+			"analysistime": "2026-05-09T10:00:00Z"
+		}`))
+	}))
+	defer srv.Close()
+
+	got, err := New(srv.URL, "tok", "42").CodeReview(context.Background(), "101")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Repository != "honey-cheetah" || len(got.FileResults) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	if got.FileResults[0].File != "a.go" || got.FileResults[0].LOC != 120 || got.FileResults[0].OldLOC != 110 {
+		t.Fatalf("file result: %+v", got.FileResults[0])
+	}
+	if got.FileResults[0].CodeHealth == nil || *got.FileResults[0].CodeHealth != 7.2 {
+		t.Fatalf("file code_health: %+v", got.FileResults[0].CodeHealth)
+	}
+	if len(got.FailedGates) == 0 {
+		t.Fatalf("failed_gates raw missing")
+	}
+}
+
+func TestCodeReviewRequiresID(t *testing.T) {
+	c := New("http://unused", "tok", "42")
+	if _, err := c.CodeReview(context.Background(), ""); err == nil {
+		t.Fatal("expected error for empty id")
+	}
+}
+
+func TestKPITrendBuildsPathAndQuery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/v2/projects/42/kpi-trend/code-health/hotspots") {
+			t.Errorf("path: %q", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("start"); got != "2026-01-01" {
+			t.Errorf("start: %q", got)
+		}
+		if got := r.URL.Query().Get("end"); got != "2026-05-09" {
+			t.Errorf("end: %q", got)
+		}
+		_, _ = w.Write([]byte(`[{"date":"2026-01-01","kpi":9.1}]`))
+	}))
+	defer srv.Close()
+
+	got, err := New(srv.URL, "tok", "42").KPITrend(context.Background(), "code-health", "hotspots", "2026-01-01", "2026-05-09")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `"kpi":9.1`) {
+		t.Fatalf("payload: %s", got)
+	}
+}
+
+func TestKPITrendRequiresFactor(t *testing.T) {
+	c := New("http://unused", "tok", "42")
+	if _, err := c.KPITrend(context.Background(), "", "", "", ""); err == nil {
+		t.Fatal("expected error for empty factor")
+	}
+}
+
+func TestIsValidKPIFactor(t *testing.T) {
+	for _, ok := range []string{"code-health", "delivery", "knowledge", "team-code-alignment", "Code-Health"} {
+		if !IsValidKPIFactor(ok) {
+			t.Errorf("expected %q to be valid", ok)
+		}
+	}
+	for _, bad := range []string{"", "code_health", "random"} {
+		if IsValidKPIFactor(bad) {
+			t.Errorf("expected %q to be invalid", bad)
+		}
+	}
+}
+
+func TestComponentsAcceptsBothShapes(t *testing.T) {
+	wrapped := []byte(`{"components":[{"name":"core","system_health":{"current_score":8.2},"change_frequency":42}]}`)
+	got, err := decodeComponents(wrapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Name != "core" || got[0].SystemHealth.CurrentScore.Value != 8.2 {
+		t.Fatalf("wrapped: %+v", got)
+	}
+
+	bare := []byte(`[{"name":"api","system_health":{"current_score":"-"}}]`)
+	got2, err := decodeComponents(bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got2) != 1 || got2[0].Name != "api" {
+		t.Fatalf("bare: %+v", got2)
+	}
+	if got2[0].SystemHealth.CurrentScore.Set {
+		t.Fatalf("\"-\" should yield unset; got %+v", got2[0].SystemHealth.CurrentScore)
+	}
+}
+
+func TestComponentMarshalFlattensHealth(t *testing.T) {
+	c := Component{Name: "core", ChangeFrequency: 5}
+	c.SystemHealth.CurrentScore.Value = 8.2
+	c.SystemHealth.CurrentScore.Set = true
+	out, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"health":8.2`) {
+		t.Fatalf("expected flattened health: %s", out)
+	}
+	if strings.Contains(string(out), "system_health") {
+		t.Fatalf("nested system_health should be hidden: %s", out)
 	}
 }
 
