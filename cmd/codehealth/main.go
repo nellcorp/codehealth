@@ -109,16 +109,29 @@ func healthCmd() *cobra.Command {
 }
 
 func deltaCmd() *cobra.Command {
-	var staged bool
+	var (
+		staged bool
+		strict bool
+	)
 	c := &cobra.Command{
 		Use:   "delta [paths...]",
 		Short: "Score staged or specified files vs HEAD (warn-only)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := config.FromEnv()
+			var backend local.Backend
+			if strict {
+				b, err := local.DetectStrict(cfg.CSCLIPath)
+				if err != nil {
+					return err
+				}
+				backend = b
+			} else {
+				backend = local.Detect(cfg.CSCLIPath)
+			}
 			res, err := delta.Run(cmd.Context(), delta.Options{
 				Paths:   args,
 				Staged:  staged,
-				Backend: local.Detect(cfg.CSCLIPath),
+				Backend: backend,
 			})
 			if err != nil {
 				return err
@@ -145,6 +158,7 @@ func deltaCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&staged, "staged", false, "pull paths from `git diff --cached`")
+	c.Flags().BoolVar(&strict, "strict", false, "fail (exit non-zero) when the CodeScene `cs` CLI is not on PATH instead of falling back to the gocyclo+gocognit engine")
 	return c
 }
 

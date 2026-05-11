@@ -96,14 +96,19 @@ func register(s *server.MCPServer, cfg *config.Config) {
 		mcp.NewTool("delta_check",
 			mcp.WithDescription("Score staged or specified files locally against a base revision (default HEAD). Returns per-file deltas. Use BEFORE committing to confirm changes are net-positive."),
 			mcp.WithBoolean("staged", mcp.Description("pull paths from `git diff --cached`"), mcp.DefaultBool(false)),
-			mcp.WithArray("paths", mcp.Description("explicit list of repo-relative paths"))),
+			mcp.WithArray("paths", mcp.Description("explicit list of repo-relative paths")),
+			mcp.WithBoolean("strict", mcp.Description("error out when the CodeScene `cs` CLI is not on PATH instead of falling back to the gocyclo+gocognit engine"), mcp.DefaultBool(false))),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			staged := req.GetBool("staged", false)
 			paths := stringSliceArg(req, "paths")
+			b, err := pickBackend(cfg, backend, req.GetBool("strict", false))
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
 			res, err := delta.Run(ctx, delta.Options{
 				Staged:  staged,
 				Paths:   paths,
-				Backend: backend,
+				Backend: b,
 			})
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
@@ -115,13 +120,18 @@ func register(s *server.MCPServer, cfg *config.Config) {
 	s.AddTool(
 		mcp.NewTool("score_file",
 			mcp.WithDescription("Local complexity score for one working-tree file. Faster than delta_check when the goal is just 'how complex is this file right now'."),
-			mcp.WithString("path", mcp.Required(), mcp.Description("absolute or repo-relative path"))),
+			mcp.WithString("path", mcp.Required(), mcp.Description("absolute or repo-relative path")),
+			mcp.WithBoolean("strict", mcp.Description("error out when the CodeScene `cs` CLI is not on PATH instead of falling back to the gocyclo+gocognit engine"), mcp.DefaultBool(false))),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			path, err := req.RequireString("path")
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
-			score, err := backend.Score(ctx, path)
+			b, err := pickBackend(cfg, backend, req.GetBool("strict", false))
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			score, err := b.Score(ctx, path)
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -298,6 +308,13 @@ func jsonResult(v any) (*mcp.CallToolResult, error) {
 		return mcp.NewToolResultError(fmt.Sprintf("marshal: %v", err)), nil
 	}
 	return mcp.NewToolResultText(string(buf)), nil
+}
+
+func pickBackend(cfg *config.Config, def local.Backend, strict bool) (local.Backend, error) {
+	if strict {
+		return local.DetectStrict(cfg.CSCLIPath)
+	}
+	return def, nil
 }
 
 func stringSliceArg(req mcp.CallToolRequest, key string) []string {

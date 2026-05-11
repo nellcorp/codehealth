@@ -25,6 +25,17 @@ func Detect(csBin string) Backend {
 	return &goBackend{}
 }
 
+// DetectStrict picks the cs CLI backend or returns ErrCSNotFound. No
+// fallback. Callers that need engine-accurate scoring (e.g. a blocking
+// pre-commit hook) should use this instead of Detect so a missing cs
+// binary surfaces as an error rather than a silent taxonomy swap.
+func DetectStrict(csBin string) (Backend, error) {
+	if !HasCSCLI(csBin) {
+		return nil, ErrCSNotFound
+	}
+	return &csBackend{bin: csBin}, nil
+}
+
 var fallbackOnce sync.Once
 
 // WarnFallbackTo is the function used to emit the fallback warning. It is
