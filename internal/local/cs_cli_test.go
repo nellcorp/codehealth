@@ -1,28 +1,69 @@
 package local
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestParseCSCheckValid(t *testing.T) {
-	in := []byte(`{"path":"x.go","health":7.5,"findings":[{"function":"Foo","line":10,"code":"complex-method","message":"Cyclomatic 15","severity":"warning"}]}`)
-	got, err := parseCSCheck(in, "x.go")
+// Captured from a real `cs review --output-format json --pretty <file>`
+// run against a complex Go file. Used as the source of truth for the
+// parser shape — when this stops matching the binary, update both
+// together.
+const realCSReviewSample = `{
+  "score": 9.6,
+  "review": [{
+    "category": "Complex Method",
+    "functions": [{
+      "title": "Big",
+      "details": "cc = 21",
+      "start-line": 3,
+      "end-line": 25,
+      "url": ""
+    }],
+    "description": "A Complex Method has a high cyclomatic complexity.",
+    "indication": 2
+  }]
+}`
+
+func TestParseCSCheckRealShape(t *testing.T) {
+	got, err := parseCSCheck([]byte(realCSReviewSample), "big.go")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.Health != 7.5 {
-		t.Fatalf("health: want 7.5, got %v", got.Health)
+	if got.Health != 9.6 {
+		t.Fatalf("health: want 9.6, got %v", got.Health)
 	}
-	if len(got.Smells) != 1 || got.Smells[0].Kind != "complexity" {
-		t.Fatalf("smells: got %+v", got.Smells)
+	if len(got.Smells) != 1 {
+		t.Fatalf("want 1 smell, got %d (%+v)", len(got.Smells), got.Smells)
+	}
+	s := got.Smells[0]
+	if s.Function != "Big" || s.Line != 3 || s.Kind != "complexity" || s.Message != "cc = 21" {
+		t.Fatalf("smell mapping wrong: %+v", s)
+	}
+}
+
+func TestParseCSCheckCleanFile(t *testing.T) {
+	// Real shape when cs finds nothing: `score=10.0, review=[]`.
+	got, err := parseCSCheck([]byte(`{"score": 10.0, "review": []}`), "x.go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Health != 10 {
+		t.Fatalf("clean file: want 10, got %v", got.Health)
+	}
+	if len(got.Smells) != 0 {
+		t.Fatalf("clean file: want 0 smells, got %+v", got.Smells)
 	}
 }
 
 func TestParseCSCheckNonJSONDegrades(t *testing.T) {
-	// Reproduces the pre-commit failure: `cs check --json` emits
-	// `Invalid path: ...` instead of JSON. Parser must degrade to a
-	// neutral score so the hook doesn't crash.
+	// `cs review` may emit plain text (e.g. "Invalid path: ...") for
+	// files it doesn't recognise. Parser must degrade to a neutral
+	// score so the pre-commit hook doesn't crash.
 	var warned string
 	prev := WarnUnparsableCSTo
 	defer func() { WarnUnparsableCSTo = prev }()
@@ -35,14 +76,32 @@ func TestParseCSCheckNonJSONDegrades(t *testing.T) {
 	if got == nil || got.Health != 10 || got.Backend != "cs" {
 		t.Fatalf("want neutral cs score, got %+v", got)
 	}
-	if !strings.Contains(warned, "non-JSON") || !strings.Contains(warned, "foo.go") {
-		t.Fatalf("warning should mention non-JSON and the path; got %q", warned)
+	if !strings.Contains(warned, "no JSON") || !strings.Contains(warned, "foo.go") {
+		t.Fatalf("warning should mention no JSON and the path; got %q", warned)
+	}
+}
+
+func TestParseCSCheckMalformedJSONErrors(t *testing.T) {
+	// Body that *looks* like JSON but isn't valid → propagate the error.
+	// Strict callers rely on this so cs output corruption fails loudly
+	// rather than passing every commit with Health=10.
+	prev := WarnUnparsableCSTo
+	defer func() { WarnUnparsableCSTo = prev }()
+	WarnUnparsableCSTo = func(string) { t.Fatal("should not warn on malformed JSON") }
+
+	_, err := parseCSCheck([]byte(`{"score": "not-a-number"`), "x.go")
+	if err == nil {
+		t.Fatal("expected parse error, got nil")
+	}
+	if !strings.Contains(err.Error(), "parse JSON") {
+		t.Fatalf("error should mention parse JSON; got %v", err)
 	}
 }
 
 func TestParseCSCheckSkipsPreambleLogs(t *testing.T) {
-	// Some cs versions print log lines before the JSON object.
-	in := []byte("Loading project...\nReady.\n{\"health\":9.0}")
+	// cs sometimes prepends warning lines (e.g. about git context) to
+	// the JSON body. Parser jumps to the first `{`.
+	in := []byte("git execution failed: fatal: not a git repository\n{\"score\": 9.0, \"review\": []}")
 	got, err := parseCSCheck(in, "x.go")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -59,5 +118,111 @@ func TestParseCSCheckEmptyBodyDegrades(t *testing.T) {
 	}
 	if got.Health != 10 {
 		t.Fatalf("want neutral score on empty body, got %+v", got)
+	}
+}
+
+func TestParseCSCheckSchemaDriftWarns(t *testing.T) {
+	// cs returns valid JSON but uses entirely different top-level keys.
+	// Parser must warn so users notice the cs version drifted rather
+	// than getting a silent Health=10 every commit.
+	var warned string
+	prev := WarnUnparsableCSTo
+	defer func() { WarnUnparsableCSTo = prev }()
+	WarnUnparsableCSTo = func(msg string) { warned = msg }
+
+	in := []byte(`{"file":"x.go","quality":7.0,"issues":[{"name":"complex"}]}`)
+	got, err := parseCSCheck(in, "x.go")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Health != 10 {
+		t.Fatalf("with no recognised keys, health falls back to 10; got %v", got.Health)
+	}
+	if !strings.Contains(warned, "none of") || !strings.Contains(warned, "x.go") {
+		t.Fatalf("warning should mention drift and path; got %q", warned)
+	}
+	if !strings.Contains(warned, "file") || !strings.Contains(warned, "quality") {
+		t.Fatalf("warning should list observed keys; got %q", warned)
+	}
+}
+
+func TestLooksUnauthenticated(t *testing.T) {
+	cases := map[string]bool{
+		"In order to use the full CLI tool you will need to set up your environment with a Personal Access Token.": true,
+		"export CS_ACCESS_TOKEN=<your-PAT>": true,
+		`{"score":9.5, "review":[]}`:        false,
+		"":                                  false,
+		"Invalid path: foo.go":              false,
+	}
+	for in, want := range cases {
+		if got := looksUnauthenticated([]byte(in)); got != want {
+			t.Errorf("looksUnauthenticated(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestNormaliseKindCSCategories(t *testing.T) {
+	// cs uses TitleCase category names like "Complex Method", "Bumpy
+	// Road Ahead", "Code Duplication" — make sure mapping is case
+	// insensitive so the codehealth Kind taxonomy stays stable.
+	cases := map[string]string{
+		"Complex Method":    "complexity",
+		"Deep Nested Logic": "deep_nesting",
+		"Long Method":       "long_function",
+		"Bumpy Road Ahead":  "bumpy_road",
+		"Code Duplication":  "duplication",
+		"":                  "smell",
+		"Unknown Category":  "Unknown Category",
+	}
+	for in, want := range cases {
+		if got := normaliseKind(in); got != want {
+			t.Errorf("normaliseKind(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestScoreFileCSIntegration shells out to the real `cs` binary when
+// one is on PATH. Catches the invocation/auth/schema mistakes parser
+// unit tests miss. Skipped automatically when `cs` is absent.
+//
+// Behaviour depends on whether CS_ACCESS_TOKEN is set:
+//   - Unset: assert ErrCSNotAuthenticated.
+//   - Set:   assert real scoring works and the schema-drift warning
+//     does NOT fire (which would mean the parser fell out of sync).
+func TestScoreFileCSIntegration(t *testing.T) {
+	if !HasCSCLI("cs") {
+		t.Skip("cs CLI not on PATH; skipping integration test")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "x.go")
+	if err := os.WriteFile(src, []byte("package x\n\nfunc A() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if os.Getenv("CS_ACCESS_TOKEN") == "" {
+		_, err := ScoreFileCS(context.Background(), "cs", src)
+		if !errors.Is(err, ErrCSNotAuthenticated) {
+			t.Fatalf("want ErrCSNotAuthenticated, got %v", err)
+		}
+		return
+	}
+
+	var warned string
+	prev := WarnUnparsableCSTo
+	defer func() { WarnUnparsableCSTo = prev }()
+	WarnUnparsableCSTo = func(msg string) { warned = msg }
+
+	got, err := ScoreFileCS(context.Background(), "cs", src)
+	if err != nil {
+		t.Fatalf("ScoreFileCS with token: %v", err)
+	}
+	if got == nil || got.Backend != "cs" {
+		t.Fatalf("want cs-backed score, got %+v", got)
+	}
+	if warned != "" {
+		t.Fatalf("schema drift warning fired — parser fields likely need updating: %s", warned)
+	}
+	if got.Health <= 0 {
+		t.Fatalf("trivial file should score > 0; got %v (schema drift?)", got.Health)
 	}
 }
