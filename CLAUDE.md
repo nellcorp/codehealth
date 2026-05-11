@@ -26,7 +26,7 @@ pushing, or opening a PR. Two backends, unified tool surface.
 │   ├── config/config.go           FromEnv() + APIReady()/CoverageReady() guards.
 │   ├── delta/delta.go             git-based before/after delta runner (writeBaseRev + scoring).
 │   ├── local/                     local scoring backends.
-│   │   ├── detect.go              Backend interface + Detect() (cs CLI vs go-fallback).
+│   │   ├── detect.go              Backend interface + Detect() (cs CLI vs go-fallback) + DetectStrict() (cs-only, no fallback).
 │   │   ├── cs_cli.go              shell out to `cs check --json`.
 │   │   └── go_metrics.go          gocyclo + gocognit AST fallback.
 │   ├── mcpsrv/server.go           MCP stdio server; tool registration in register().
@@ -113,6 +113,7 @@ Checklist:
 - **Each backend ready-check is independent.** A missing CodeScene token must not break Codecov tools, and vice versa.
 - **MCP errors** via `NewToolResultError(err.Error())` — never propagate Go err out of the handler.
 - **Local `delta_check` is warn-only.** Returns `nil` even when regressed; CI is the gate.
+- **`--strict` / `strict: true` only gate engine selection, not regressions.** When set, `delta` (CLI) and `delta_check` / `score_file` (MCP) call `local.DetectStrict` and surface `ErrCSNotFound` instead of falling back to the gocyclo+gocognit engine. Use this in pre-commit hooks that want to refuse to run when the CodeScene `cs` CLI is missing. Regression policy is still warn-only.
 - **JSON responses** via `jsonResult()` (MCP) or `printJSON()` (CLI). Indented for readability.
 - **Repo working dir in tests**: `t.TempDir()` + `git init -b main`. See `internal/delta/delta_test.go`.
 

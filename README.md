@@ -28,8 +28,8 @@ The binary speaks two protocols:
 | `list_code_reviews` | CodeScene REST API | Recent CodeScene Code Reviews (delta-analyses) the PR integration ran. |
 | `code_review` | CodeScene REST API | One Code Review by id — per-file before/after `code_health`, failed gates, commits. |
 | `kpi_trend` | CodeScene REST API | 4-factors dashboard trend line (`code-health`, `delivery`, `knowledge`, `team-code-alignment`). |
-| `delta_check` | Local: `cs` CLI or gocyclo+gocognit | Scores staged or specified files vs HEAD. Use **before** committing. |
-| `score_file` | Local: same as above | One-file complexity probe. |
+| `delta_check` | Local: `cs` CLI or gocyclo+gocognit | Scores staged or specified files vs HEAD. Use **before** committing. Pass `strict: true` to fail when `cs` is missing instead of falling back. |
+| `score_file` | Local: same as above | One-file complexity probe. Pass `strict: true` to fail when `cs` is missing. |
 | `coverage_overview` | Codecov REST API | Project coverage % vs the local `.codecov-thresholds` floor. |
 | `file_coverage` | Codecov REST API | Per-file coverage at a branch or commit SHA. |
 | `delta_coverage` | Codecov REST API | Coverage delta between two commits. Use **before** pushing/PR. |
@@ -153,12 +153,27 @@ pre-commit:
         codehealth delta --staged || true
 ```
 
+Blocking gate (fails the commit when the `cs` CLI is not installed, so
+the gocyclo+gocognit fallback's narrower smell taxonomy never masks a
+CodeScene biomarker like Bumpy Road or Complex Method):
+
+```yaml
+pre-commit:
+  commands:
+    codehealth-delta:
+      glob: "*.go"
+      run: codehealth delta --staged --strict
+```
+
+`--strict` only controls engine selection; regression policy stays
+warn-only because CI is the authoritative gate.
+
 ## CLI reference
 
 ```bash
 codehealth serve                              # MCP server (stdio)
 codehealth health                             # CodeScene project scores + floor
-codehealth delta [--staged] [paths]           # local delta vs HEAD (warn-only)
+codehealth delta [--staged] [--strict] [paths] # local delta vs HEAD (warn-only; --strict fails if `cs` is missing)
 codehealth hotspots --limit 10                # CodeScene top hotspots
 codehealth file <path>                        # CodeScene file health + biomarkers
 codehealth components                         # architectural-component health
