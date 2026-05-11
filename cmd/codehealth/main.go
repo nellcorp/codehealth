@@ -42,6 +42,7 @@ var version = "dev"
 
 func main() {
 	local.WarnFallbackTo = func(msg string) { fmt.Fprintln(os.Stderr, msg) }
+	local.WarnUnparsableCSTo = func(msg string) { fmt.Fprintln(os.Stderr, msg) }
 
 	root := &cobra.Command{
 		Use:           "codehealth",
