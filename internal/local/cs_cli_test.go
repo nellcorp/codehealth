@@ -146,6 +146,56 @@ func TestParseCSCheckSchemaDriftWarns(t *testing.T) {
 	}
 }
 
+func TestBridgeCSToken(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      []string
+		wantHas string // expected CS_ACCESS_TOKEN value after bridge ("" = absent)
+	}{
+		{
+			name:    "bridges CODESCENE_TOKEN when CS_ACCESS_TOKEN unset",
+			in:      []string{"PATH=/usr/bin", "CODESCENE_TOKEN=pat-codescene"},
+			wantHas: "pat-codescene",
+		},
+		{
+			name:    "respects explicit CS_ACCESS_TOKEN",
+			in:      []string{"CS_ACCESS_TOKEN=pat-cs", "CODESCENE_TOKEN=pat-codescene"},
+			wantHas: "pat-cs",
+		},
+		{
+			name:    "treats empty CS_ACCESS_TOKEN as unset",
+			in:      []string{"CS_ACCESS_TOKEN=", "CODESCENE_TOKEN=pat-codescene"},
+			wantHas: "pat-codescene",
+		},
+		{
+			name:    "no-op when neither var set",
+			in:      []string{"PATH=/usr/bin"},
+			wantHas: "",
+		},
+		{
+			name:    "no-op when only CS_ACCESS_TOKEN set",
+			in:      []string{"CS_ACCESS_TOKEN=pat-cs"},
+			wantHas: "pat-cs",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := bridgeCSToken(c.in)
+			// Take the *last* CS_ACCESS_TOKEN occurrence — that's the
+			// effective value Linux exec uses when env has duplicates.
+			var effective string
+			for _, kv := range got {
+				if strings.HasPrefix(kv, "CS_ACCESS_TOKEN=") {
+					effective = kv[len("CS_ACCESS_TOKEN="):]
+				}
+			}
+			if effective != c.wantHas {
+				t.Errorf("CS_ACCESS_TOKEN: got %q, want %q (env=%v)", effective, c.wantHas, got)
+			}
+		})
+	}
+}
+
 func TestLooksUnauthenticated(t *testing.T) {
 	cases := map[string]bool{
 		"In order to use the full CLI tool you will need to set up your environment with a Personal Access Token.": true,
@@ -199,12 +249,21 @@ func TestScoreFileCSIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if os.Getenv("CS_ACCESS_TOKEN") == "" {
+	csToken := os.Getenv("CS_ACCESS_TOKEN")
+	codesceneToken := os.Getenv("CODESCENE_TOKEN")
+	if csToken == "" && codesceneToken == "" {
 		_, err := ScoreFileCS(context.Background(), "cs", src)
 		if !errors.Is(err, ErrCSNotAuthenticated) {
 			t.Fatalf("want ErrCSNotAuthenticated, got %v", err)
 		}
 		return
+	}
+
+	// If only CODESCENE_TOKEN is set, the bridge in ScoreFileCS must
+	// export it as CS_ACCESS_TOKEN to the subprocess. Clear the cs var
+	// for the duration of this test to exercise that path explicitly.
+	if csToken == "" && codesceneToken != "" {
+		t.Setenv("CS_ACCESS_TOKEN", "")
 	}
 
 	var warned string

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -65,6 +66,7 @@ func ScoreFileCS(ctx context.Context, bin, path string) (*Score, error) {
 		return nil, ErrCSNotFound
 	}
 	cmd := exec.CommandContext(ctx, bin, "review", "--output-format", "json", path)
+	cmd.Env = bridgeCSToken(os.Environ())
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -93,6 +95,40 @@ func ScoreFileCS(ctx context.Context, bin, path string) (*Score, error) {
 func looksUnauthenticated(b []byte) bool {
 	return bytes.Contains(b, []byte("CS_ACCESS_TOKEN")) ||
 		bytes.Contains(b, []byte("Personal Access Token"))
+}
+
+// bridgeCSToken returns a child-process env that maps codehealth's
+// CODESCENE_TOKEN onto cs's CS_ACCESS_TOKEN so users only have to set
+// one var. A pre-existing non-empty CS_ACCESS_TOKEN in the env wins —
+// we never overwrite an explicit setting. Pure function over a copy of
+// the parent env so it's trivially testable.
+func bridgeCSToken(parent []string) []string {
+	out := make([]string, 0, len(parent)+1)
+	var (
+		haveCSToken bool
+		codesceneVal string
+	)
+	for _, kv := range parent {
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			out = append(out, kv)
+			continue
+		}
+		k, v := kv[:eq], kv[eq+1:]
+		switch k {
+		case "CS_ACCESS_TOKEN":
+			if v != "" {
+				haveCSToken = true
+			}
+		case "CODESCENE_TOKEN":
+			codesceneVal = v
+		}
+		out = append(out, kv)
+	}
+	if !haveCSToken && codesceneVal != "" {
+		out = append(out, "CS_ACCESS_TOKEN="+codesceneVal)
+	}
+	return out
 }
 
 // parseCSCheck parses one cs-review JSON document. When the body has no
