@@ -13,9 +13,14 @@ import (
 // ErrCSNotFound indicates the CodeScene `cs` CLI is not on PATH.
 var ErrCSNotFound = errors.New("local: codescene `cs` CLI not found on PATH")
 
-// WarnUnparsableCSTo is the sink used when `cs check --json` emits
-// non-JSON output (e.g. `Invalid path: ...`) instead of the documented
-// schema. Overridable in tests; wired to stderr in main.
+// ErrCSNotAuthenticated indicates the cs CLI ran but refused to do work
+// because CS_ACCESS_TOKEN is not set. cs prints a PAT setup notice and
+// exits 0, so we detect it by content rather than exit code.
+var ErrCSNotAuthenticated = errors.New("local: codescene `cs` CLI is not authenticated — set CS_ACCESS_TOKEN (https://codescene.io/users/me/pat)")
+
+// WarnUnparsableCSTo is the sink used when `cs review --output-format
+// json` emits non-JSON output (e.g. `Invalid path: ...`) instead of the
+// documented schema. Overridable in tests; wired to stderr in main.
 var WarnUnparsableCSTo = func(msg string) { _ = msg }
 
 // HasCSCLI reports whether the configured `cs` binary is invokable.
@@ -27,13 +32,18 @@ func HasCSCLI(bin string) bool {
 	return err == nil
 }
 
-// ScoreFileCS scores one file by shelling out to `cs check --json <path>`.
+// ScoreFileCS scores one file by shelling out to
+// `cs review --output-format json <path>`.
 //
-// `cs check` is CodeScene's local lint-like command. The exact JSON shape
-// is vendor-specific; we read the conventional top-level fields and
-// degrade to "unknown but no error" if the schema differs. When the
-// binary is missing or the call fails, ErrCSNotFound is returned so the
-// caller can fall back to the pure-Go backend.
+// `cs review` is CodeScene's per-file scoring command. `cs check` (the
+// older lint-like command) does not support a JSON output flag at all on
+// recent releases — it prints human-readable text only. The exact JSON
+// shape is vendor-specific; we read the conventional top-level fields
+// and degrade to "unknown but no error" if the schema differs. When the
+// binary is missing, ErrCSNotFound is returned so callers can fall back.
+// When `cs` runs but is unauthenticated (no `CS_ACCESS_TOKEN`),
+// ErrCSNotAuthenticated is returned — silent degradation would hide the
+// configuration gap from users who explicitly opted into strict mode.
 func ScoreFileCS(ctx context.Context, bin, path string) (*Score, error) {
 	if bin == "" {
 		bin = "cs"
@@ -41,17 +51,20 @@ func ScoreFileCS(ctx context.Context, bin, path string) (*Score, error) {
 	if !HasCSCLI(bin) {
 		return nil, ErrCSNotFound
 	}
-	cmd := exec.CommandContext(ctx, bin, "check", "--json", path)
+	cmd := exec.CommandContext(ctx, bin, "review", "--output-format", "json", path)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
-	// `cs check` exits non-zero on findings; prefer stdout for the JSON
+	// `cs review` exits non-zero on findings; prefer stdout for the JSON
 	// body and fall back to stderr only if stdout is empty. This keeps
 	// findings intact when the CLI signals "issues present" via exit code.
 	out := stdout.Bytes()
 	if len(out) == 0 {
 		out = stderr.Bytes()
+	}
+	if looksUnauthenticated(out) {
+		return nil, ErrCSNotAuthenticated
 	}
 	if len(out) == 0 {
 		if runErr != nil {
@@ -60,6 +73,13 @@ func ScoreFileCS(ctx context.Context, bin, path string) (*Score, error) {
 		return &Score{Path: path, Health: 10, Backend: "cs"}, nil
 	}
 	return parseCSCheck(out, path)
+}
+
+// looksUnauthenticated detects the "Personal Access Token required"
+// notice that cs prints (and exits 0) when CS_ACCESS_TOKEN is unset.
+func looksUnauthenticated(b []byte) bool {
+	return bytes.Contains(b, []byte("CS_ACCESS_TOKEN")) ||
+		bytes.Contains(b, []byte("Personal Access Token"))
 }
 
 // parseCSCheck parses one cs-check JSON document. When the body is not

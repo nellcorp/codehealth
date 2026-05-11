@@ -1,6 +1,10 @@
 package local
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -59,5 +63,44 @@ func TestParseCSCheckEmptyBodyDegrades(t *testing.T) {
 	}
 	if got.Health != 10 {
 		t.Fatalf("want neutral score on empty body, got %+v", got)
+	}
+}
+
+func TestLooksUnauthenticated(t *testing.T) {
+	cases := map[string]bool{
+		"In order to use the full CLI tool you will need to set up your environment with a Personal Access Token.": true,
+		"export CS_ACCESS_TOKEN=<your-PAT>": true,
+		`{"health":9.5}`:                    false,
+		"":                                  false,
+		"Invalid path: foo.go":              false,
+	}
+	for in, want := range cases {
+		if got := looksUnauthenticated([]byte(in)); got != want {
+			t.Errorf("looksUnauthenticated(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// TestScoreFileCSIntegration shells out to the real `cs` binary when
+// one is on PATH. It is the integration check that the unit tests
+// above can't provide. Skipped automatically in environments without
+// `cs` (most CI runners).
+func TestScoreFileCSIntegration(t *testing.T) {
+	if !HasCSCLI("cs") {
+		t.Skip("cs CLI not on PATH; skipping integration test")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "x.go")
+	if err := os.WriteFile(src, []byte("package x\n\nfunc A() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Drop CS_ACCESS_TOKEN to verify unauthenticated detection — this
+	// is the failure mode users hit when running `--strict` without
+	// setting the env var.
+	t.Setenv("CS_ACCESS_TOKEN", "")
+	_, err := ScoreFileCS(context.Background(), "cs", src)
+	if !errors.Is(err, ErrCSNotAuthenticated) {
+		t.Fatalf("want ErrCSNotAuthenticated, got %v", err)
 	}
 }
